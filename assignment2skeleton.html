@@ -78,12 +78,12 @@
 
     // Placeholder images. Replace paths with your provided zip images.
     const imageByName = {
-      Pikachu:  "pikachu.png",
-      Eevee:    "eevee.png",
-      Snorlax:  "snorlax.png",
-      Garchomp: "garchomp.png",
-      Lucario:  "lucario.png",
-      Ditto:    "ditto.png"
+      Pikachu:  "pikachu.jpg",
+      Eevee:    "eevee.jpg",
+      Snorlax:  "snorlax.jpg",
+      Garchomp: "garchomp.jpg",
+      Lucario:  "lucario.jpg",
+      Ditto:    "ditto.jpg"
     };
 
     // DOM references
@@ -278,14 +278,7 @@
       winnerLabel.style.display = "block";
 
       // Refresh labels to show updated loss counts
-      const imageByName = {
-        Pikachu:  "pikachu.jpg",
-        Eevee:    "eevee.jpg",
-        Snorlax:  "snorlax.jpg",
-        Garchomp: "garchomp.jpg",
-        Lucario:  "lucario.jpg",
-        Ditto:    "ditto.jpg"
-      };
+      pokemon1Label.textContent = `${name1} (Losses: ${losses1[idx1]})`;
       pokemon2Label.textContent = `${name2} (Losses: ${losses2[idx2]})`;
 
       // Update scoreboard
