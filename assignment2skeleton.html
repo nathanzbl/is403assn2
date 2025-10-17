@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pokemon Battle Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    /* Basic page styles */
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { margin-bottom: 8px; }
+
+    /* Game UI is hidden until the user agrees to play */
+    #gameArea { display: none; margin-top: 12px; }
+
+    .row { display: flex; gap: 24px; align-items: flex-start; margin: 10px 0; }
+    .card { border: 1px solid #ccc; padding: 12px; border-radius: 8px; min-width: 220px; }
+    .name { font-weight: bold; font-size: 1.1rem; margin-bottom: 6px; }
+    .status { margin-top: 6px; min-height: 1.2em; }
+    img { width: 120px; height: 120px; object-fit: contain; background: #f7f7f7; border-radius: 8px; border: 1px solid #eee; }
+
+    #playButton { display: none; padding: 10px 16px; font-size: 1rem; cursor: pointer; }
+    #winnerLabel { display: none; margin-top: 10px; font-weight: bold; }
+
+    #scoreboard { margin: 12px 0; font-weight: bold; }
+    #gameHistory { white-space: pre-wrap; margin-top: 16px; }
+  </style>
+</head>
+<body>
+
+  <h1>Pokemon Battle</h1>
+
+  <!-- Game UI (labels, images, button stay hidden until user says Yes) -->
+  <div id="gameArea" aria-live="polite">
+    <div id="scoreboard"></div>
+
+    <div class="row">
+      <div class="card">
+        <div class="name">Team 1</div>
+        <label id="pokemon1"></label>
+        <img id="pokemonImage1" src="" alt="Team 1 Pokemon" />
+        <div class="status" id="status1"></div>
+      </div>
+
+      <div class="card">
+        <div class="name">Team 2</div>
+        <label id="pokemon2"></label>
+        <img id="pokemonImage2" src="" alt="Team 2 Pokemon" />
+        <div class="status" id="status2"></div>
+      </div>
+    </div>
+
+    <button id="playButton" type="button">Play</button>
+    <div id="winnerLabel"></div>
+  </div>
+
+  <!-- Full multi-game history will be printed here when user stops playing -->
+  <p id="gameHistory"></p>
+
+  <script>
+    /*
+      Pokemon Battle Game
+      Requirements covered:
+      - Prompt user to play. If first char is Y or y, start. Accepts inputs like "yes", "Y", "You bet".
+      - Hide labels, images, and Play button until user agrees.
+      - Two teams (arrays). First fighters start. Display names and images dynamically.
+      - On each Play click: roll 0..20 for both fighters, higher roll wins the round.
+      - Show "Win" or "Lose" under each fighter for the round. Ties assign no losses.
+      - A fighter is eliminated after 3 losses. The next fighter replaces them.
+      - The winner carries forward their current loss count. Do not reset between matches.
+      - Game ends when a team runs out of fighters. Track per-game winner by round wins.
+      - Ask to play again. If yes, reset the screen for a new game but do not erase overall history.
+      - When user is done, print all recorded rounds for all games to the P tag in the required format.
+    */
+
+    // Teams as specified
+    const asPokemon1 = ["Pikachu", "Eevee", "Snorlax"];
+    const asPokemon2 = ["Garchomp", "Lucario", "Ditto"];
+
+    // Placeholder images. Replace paths with your provided zip images.
+    const imageByName = {
+      Pikachu:  "pikachu.png",
+      Eevee:    "eevee.png",
+      Snorlax:  "snorlax.png",
+      Garchomp: "garchomp.png",
+      Lucario:  "lucario.png",
+      Ditto:    "ditto.png"
+    };
+
+    // DOM references
+    const gameArea       = document.getElementById("gameArea");
+    const playButton     = document.getElementById("playButton");
+    const pokemon1Label  = document.getElementById("pokemon1");
+    const pokemon2Label  = document.getElementById("pokemon2");
+    const img1           = document.getElementById("pokemonImage1");
+    const img2           = document.getElementById("pokemonImage2");
+    const status1        = document.getElementById("status1");
+    const status2        = document.getElementById("status2");
+    const winnerLabel    = document.getElementById("winnerLabel");
+    const gameHistoryP   = document.getElementById("gameHistory");
+    const scoreboard     = document.getElementById("scoreboard");
+
+    // Persistent across multiple games in this session
+    const allGamesHistory = []; // Each element is an array of strings like "Pikachu 10 - Garchomp 5"
+    let team1AllTimeWins  = 0;  // Total round wins across all games
+    let team2AllTimeWins  = 0;
+
+    // Per game state
+    let idx1, idx2;                   // Current fighter index for each team
+    let losses1, losses2;             // Arrays of loss counts per fighter
+    let team1RoundWins, team2RoundWins;
+    let currentGameHistory;           // Array of round result strings for the current game
+    let inGame = false;
+
+    // Utility: decide if an answer means yes by checking first char for 'y' or 'Y'
+    function firstCharIsY(input) {
+      if (!input || typeof input !== "string") return false;
+      return input.trim().charAt(0).toLowerCase() === "y";
+    }
+
+    // Ask the user to play with a prompt
+    function askToPlay(message = "Do you want to play?") {
+      const answer = prompt(message);
+      return firstCharIsY(answer);
+    }
+
+    // Update the name labels and images for current fighters
+    function setCurrentSpritesAndLabels() {
+      const name1 = asPokemon1[idx1];
+      const name2 = asPokemon2[idx2];
+
+      pokemon1Label.textContent = `${name1} (Losses: ${losses1[idx1]})`;
+      pokemon2Label.textContent = `${name2} (Losses: ${losses2[idx2]})`;
+
+      img1.src = imageByName[name1] || "Pokemon/placeholder1.png";
+      img2.src = imageByName[name2] || "Pokemon/placeholder2.png";
+
+      status1.textContent = "";
+      status2.textContent = "";
+    }
+
+    // Show per-game and all-time scoreboards
+    function updateScoreboard() {
+      scoreboard.textContent =
+        `This game round wins -> Team 1: ${team1RoundWins} | Team 2: ${team2RoundWins}  ` +
+        `||  All time -> Team 1: ${team1AllTimeWins} | Team 2: ${team2AllTimeWins}`;
+    }
+
+    // Start a new game without wiping the all-time history
+    function initGame() {
+      idx1 = 0;
+      idx2 = 0;
+      losses1 = [0, 0, 0];
+      losses2 = [0, 0, 0];
+      team1RoundWins = 0;
+      team2RoundWins = 0;
+      currentGameHistory = [];
+      inGame = true;
+
+      gameArea.style.display = "block";
+      playButton.style.display = "inline-block";
+      winnerLabel.style.display = "none";
+      gameHistoryP.textContent = ""; // Clear printed history while actively playing
+
+      setCurrentSpritesAndLabels();
+      updateScoreboard();
+    }
+
+    // End the current game, store results, and ask to play again
+    function endGame() {
+      inGame = false;
+
+      // Announce game winner by round wins
+      if (team1RoundWins > team2RoundWins) {
+        winnerLabel.textContent = "Game over. Team 1 wins this game.";
+      } else if (team2RoundWins > team1RoundWins) {
+        winnerLabel.textContent = "Game over. Team 2 wins this game.";
+      } else {
+        winnerLabel.textContent = "Game over. It is a tie for this game.";
+      }
+      winnerLabel.style.display = "block";
+
+      // Save this game's round history
+      allGamesHistory.push([...currentGameHistory]);
+
+      // Offer replay
+      const again = askToPlay("Play again?");
+      if (again) {
+        initGame(); // Keep all-time history and totals
+      } else {
+        // Print all historical rounds to the P tag and hide active UI
+        renderAllHistory();
+        gameArea.style.display = "none";
+        playButton.style.display = "none";
+      }
+    }
+
+    // True when a team has exhausted all three fighters
+    function teamHasNoFightersLeft(teamIdx) {
+      return teamIdx >= 3; // Teams are length 3
+    }
+
+    // Advance fighters who hit 3 losses; return false if game ends
+    function advanceFighterIfEliminated() {
+      // Knock out fighters at 3 losses
+      if (losses1[idx1] >= 3) idx1++;
+      if (losses2[idx2] >= 3) idx2++;
+
+      // If either team is out of fighters, finish the game
+      if (teamHasNoFightersLeft(idx1) || teamHasNoFightersLeft(idx2)) {
+        endGame();
+        return false;
+      }
+
+      // Update UI with any newly active fighters
+      setCurrentSpritesAndLabels();
+      return true;
+    }
+
+    // Render all games and rounds to the P tag, matching the format in the prompt
+    function renderAllHistory() {
+      if (allGamesHistory.length === 0) {
+        gameHistoryP.textContent = "No games played.";
+        return;
+      }
+      let out = "";
+      allGamesHistory.forEach((rounds, gameIdx) => {
+        out += `Game ${gameIdx + 1}:\n`;
+        if (rounds.length === 0) {
+          out += "  (no rounds)\n";
+        } else {
+          rounds.forEach((line) => {
+            out += "  " + line + "\n";
+          });
+        }
+        out += "\n";
+      });
+      out += `All time round wins -> Team 1: ${team1AllTimeWins} | Team 2: ${team2AllTimeWins}`;
+      gameHistoryP.textContent = out.trim();
+    }
+
+    // Execute one battle round when the Play button is clicked
+    function playRound() {
+      if (!inGame) return;
+
+      const name1 = asPokemon1[idx1];
+      const name2 = asPokemon2[idx2];
+
+      // Random rolls 0..20 for both fighters
+      const roll1 = Math.floor(Math.random() * 21);
+      const roll2 = Math.floor(Math.random() * 21);
+
+      // Record the round in required format using a simple hyphen separator
+      const roundLine = `${name1} ${roll1} - ${name2} ${roll2}`;
+      currentGameHistory.push(roundLine);
+
+      // Decide the round outcome
+      if (roll1 > roll2) {
+        team1RoundWins++;
+        team1AllTimeWins++;
+        status1.textContent = "Win";
+        status2.textContent = "Lose";
+        winnerLabel.textContent = `${roundLine}. ${name1} wins this round.`;
+        losses2[idx2]++; // Loser gets a loss
+      } else if (roll2 > roll1) {
+        team2RoundWins++;
+        team2AllTimeWins++;
+        status1.textContent = "Lose";
+        status2.textContent = "Win";
+        winnerLabel.textContent = `${roundLine}. ${name2} wins this round.`;
+        losses1[idx1]++; // Loser gets a loss
+      } else {
+        // Tie round: no wins or losses assigned
+        status1.textContent = "Tie";
+        status2.textContent = "Tie";
+        winnerLabel.textContent = `${roundLine}. Tie. No losses assigned.`;
+      }
+
+      winnerLabel.style.display = "block";
+
+      // Refresh labels to show updated loss counts
+      const imageByName = {
+        Pikachu:  "pikachu.jpg",
+        Eevee:    "eevee.jpg",
+        Snorlax:  "snorlax.jpg",
+        Garchomp: "garchomp.jpg",
+        Lucario:  "lucario.jpg",
+        Ditto:    "ditto.jpg"
+      };
+      pokemon2Label.textContent = `${name2} (Losses: ${losses2[idx2]})`;
+
+      // Update scoreboard
+      updateScoreboard();
+
+      // If anyone hit 3 losses, advance fighters or end game
+      if (!advanceFighterIfEliminated()) return;
+    }
+
+    // Wire the button once
+    playButton.addEventListener("click", playRound);
+
+    // Entry point: ask to play; reveal UI only if user answers Yes by first char 'y'
+    (function boot() {
+      const wants = askToPlay();
+      if (wants) {
+        // Show UI only after agreement
+        gameArea.style.display = "block";
+        playButton.style.display = "inline-block";
+        initGame();
+      } else {
+        // User declined right away
+        gameHistoryP.textContent = "Maybe next time.";
+      }
+    })();
+  </script>
+</body>
+</html>
